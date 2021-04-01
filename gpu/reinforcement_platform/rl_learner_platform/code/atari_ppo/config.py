@@ -7,14 +7,14 @@ class Config:
     ALPHA = 0.5
     BETA = 0.01
     EPSILON = 1e-5
-    INIT_CLIP_PARAM = 0.64976
+    INIT_CLIP_PARAM = 0.1
     EPISODE = 20000000
-    GAMMA = 0.9966
+    GAMMA = 0.995
     LAMDA = 0.95
     STEPS = 157
     EPOCHES = 4
     MINI_BATCH_NUM = 4
-    ENV_NAME = 'BowlingNoFrameskip-v4'
+    ENV_NAME = 'PongNoFrameskip-v4'
     MIN_POLICY = 0.00005
     T = 1
     TASK_NAME = 'test_auto'
@@ -34,16 +34,23 @@ class Config:
     TASK_UUID = "123"
     IS_TRAIN = True
     IS_CHECK = False
+    LSTM_STEP = 16
+    LSTM_UNIT_SIZE = 128
 
     #atari ppo, ac
     DATA_SHAPES = [[28228]]
-    DATA_SPLIT_SHAPE = [28224, 1, 1, 1, 1]
+    DATA_SPLIT_SHAPE = [28224, 1, 1, 1, 1, LSTM_UNIT_SIZE, LSTM_UNIT_SIZE]
+
+    for i in range(len(DATA_SPLIT_SHAPE)):
+        DATA_SPLIT_SHAPE[i] = DATA_SPLIT_SHAPE[i] * LSTM_STEP
+    DATA_SHAPES = [[sum(DATA_SPLIT_SHAPE)]]
 
     #atari dqn
     DATA_SHAPES_DQN = [[56453]]
     DATA_SPLIT_SHAPE_DQN = [28224, 28224, 1, 1, 1, 1, 1]
 
     INPUT_DIM = [84, 84, 4]
+
     LIB_GAMECORE = "games.atari.gamecore"
     LIB_AIPROCESS = "games.atari.aiprocess"
     LIB_ENVIRONMENT = "games.atari.environment"

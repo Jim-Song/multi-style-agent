@@ -11,14 +11,36 @@ class Model(ModelBase):
         self.feature_shape = list(self.feature_dim)
         self.feature_shape.insert(0, -1)
         self.action_dim = Config.ACTION_DIM
+        self.lstm_unit_size = Config.LSTM_UNIT_SIZE
+        self.lstm_time_steps = Config.LSTM_STEP
 
-    def inference(self, feature):
+    def inference(self, feature, init_lstm_c, init_lstm_h):
+        '''
+        feature: [B, T, C, H, W]
+        '''
         self.feature = tf.identity(feature, name="feature")
         self.feature_float = tf.to_float(feature, name="feature_float")
         self.feature_float = tf.reshape(self.feature_float, self.feature_shape)
 
         with tf.variable_scope("model"):
             self.h = self._cnn()
+            reshape_fc_public_result = tf.reshape(self.h, [-1, self.lstm_time_steps, 128],
+                                                  name="reshape_fc_public_result")
+            lstm_c = tf.reshape(init_lstm_c, [-1, self.lstm_unit_size])
+            lstm_h = tf.reshape(init_lstm_h, [-1, self.lstm_unit_size])
+            lstm_initial_state = tf.nn.rnn_cell.LSTMStateTuple(lstm_c, lstm_h)
+            with tf.variable_scope("public_lstm"):
+                lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.lstm_unit_size, forget_bias=1.0)
+                with tf.variable_scope("rnn"):
+                    state = lstm_initial_state
+                    lstm_output_list = []
+                    for step in range(self.lstm_time_steps):
+                        lstm_output, state = lstm_cell(reshape_fc_public_result[:, step, :], state)
+                        lstm_output_list.append(lstm_output)
+                    lstm_outputs = tf.concat(lstm_output_list, axis=1, name="lstm_outputs")
+                self.reshape_lstm_outputs_result = tf.reshape(lstm_outputs, [-1, self.lstm_unit_size],
+                                                         name="reshape_lstm_outputs_result")
+
             self.pi_logits = self._create_policy_network()
             self.value = self._create_value_network()
 
@@ -34,7 +56,7 @@ class Model(ModelBase):
     def _create_policy_network(self):
         pi_logits_all = []
         for i in range(self.action_dim):
-            pi_logit_tmp = tf.layers.dense(self.h, 1, activation=None,\
+            pi_logit_tmp = tf.layers.dense(self.reshape_lstm_outputs_result, 1, activation=None,\
                     kernel_initializer=Orthogonal(scale=0.01),\
                     name="logits_%d" % i)
             pi_logits_all.append(pi_logit_tmp)
@@ -42,7 +64,7 @@ class Model(ModelBase):
         return pi_logits_all_2
 
     def _create_value_network(self):
-        value = tf.layers.dense(self.h, 1, activation=None,\
+        value = tf.layers.dense(self.reshape_lstm_outputs_result, 1, activation=None,\
                 kernel_initializer=Orthogonal(), name="value")
         return value[:, 0]
 

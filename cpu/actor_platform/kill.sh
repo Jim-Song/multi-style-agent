@@ -7,3 +7,4 @@ ps aux | grep tar_ckpt.py | grep -v grep  | awk '{print $2}' | xargs kill -9
 ps aux | grep delete.sh | grep -v grep  | awk '{print $2}' | xargs kill -9
 #ps aux | grep test_reward.py | grep -v grep | awk '{print $2}' | xargs kill -9
 #ps aux | grep sgame | grep -v grep | awk '{print $2}' | xargs kill -9
+ps aux | grep run_actor.sh | grep -v grep | awk '{print $2}' | xargs kill -9

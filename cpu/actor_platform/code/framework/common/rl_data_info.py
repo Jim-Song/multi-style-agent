@@ -19,6 +19,9 @@ class RLDataInfo:
         self.task_uuid = b""
         self.next_Q_value = b""
         self.gamma_pow = 1
+        self.lstm_c = b""
+        self.lstm_h = b""
+        
     def struct_to_pb(self, off_policy_rl_info):
         off_policy_rl_info.frame_no = self.frame_no
         off_policy_rl_info.feature = self.feature
@@ -37,3 +40,5 @@ class RLDataInfo:
         off_policy_rl_info.uuid = self.task_uuid
         off_policy_rl_info.next_Q_value = self.next_Q_value
         off_policy_rl_info.gamma_pow = self.gamma_pow
+        off_policy_rl_info.lstm_c = self.lstm_c
+        off_policy_rl_info.lstm_h = self.lstm_h

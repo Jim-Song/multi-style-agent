@@ -65,31 +65,31 @@ class Actor():
 
     def send_data(self, cond=None):
         while True:
-            try:
-                cond.acquire()
-                if len(self.m_replay_buffer) == 0:
-                    cond.wait()
-                LOG.info("send_data: {:.2f}".format(len(self.m_replay_buffer)))
-                self.m_sender.send_data(self.m_replay_buffer.popleft())
-                cond.release()
-            except Exception as e:
-                LOG.error(e)
+            # try:
+            cond.acquire()
+            if len(self.m_replay_buffer) == 0:
+                cond.wait()
+            LOG.info("send_data: {:.2f}".format(len(self.m_replay_buffer)))
+            self.m_sender.send_data(self.m_replay_buffer.popleft())
+            cond.release()
+            # except Exception as e:
+                # LOG.error(e)
 
     def get_data(self, cond=None):
         while True:
-            try:
-                game_id = CommonFunc.get_game_id()
-                if cond:
-                    cond.acquire()
-                samples = self._run_episode(game_id)
-                #if self.m_action_type == "async":
-                send_samples = CommonFunc.generate_data(*samples)
-                self.m_replay_buffer.extend(send_samples)
-                if cond:
-                    cond.notifyAll()
-                    cond.release()
-            except Exception as e:
-                LOG.error(e)
+            # try:
+            game_id = CommonFunc.get_game_id()
+            if cond:
+                cond.acquire()
+            samples = self._run_episode(game_id)
+            #if self.m_action_type == "async":
+            send_samples = CommonFunc.generate_data(*samples)
+            self.m_replay_buffer.extend(send_samples)
+            if cond:
+                cond.notifyAll()
+                cond.release()
+            # except Exception as e:
+            #     LOG.error(e)
 
     def _run_episode(self, game_id):
         #if self.m_action_type == "async":
@@ -99,7 +99,7 @@ class Actor():
         frame_no = 0
         while frame_no < self.m_steps:
             frame_no += 1
-            action, value, neg_log_pis = aiprocess.process(state)
+            action, value, neg_log_pis, lstm_state = aiprocess.process(state)
             next_state, reward, done, info, _ = self.m_gamecore.process(action)
             if info:
                 if info["reward"] > self.m_best_reward:
@@ -114,7 +114,9 @@ class Actor():
                                        done,
                                        info,
                                        value,
-                                       neg_log_pis)
+                                       neg_log_pis,
+                                       lstm_state,
+                                       )
             state = next_state
         value = aiprocess.get_value(state)
         sample_manager.save_value(value[0])

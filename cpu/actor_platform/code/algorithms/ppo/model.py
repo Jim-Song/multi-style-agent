@@ -2,16 +2,31 @@
 import tensorflow as tf
 import numpy as np
 from framework.algorithm.model import Model as Model_Base
+from config.config import Config
 
 
 class Model(Model_Base):
     def __init__(self, with_random=True):
         super().__init__(with_random)
+        self.lstm_unit_size = Config.LSTM_UNIT_SIZE
 
-    def inference(self, feature):
+    def inference(self, feature, lstm_state):
+        init_lstm_c, init_lstm_h = lstm_state
         self.feature_float = tf.to_float(feature, name="obs_float")
         with tf.variable_scope("model"):
             self.h = self._cnn()
+            reshape_fc_public_result = tf.reshape(self.h, [-1, 128],
+                                                  name="reshape_fc_public_result")
+            lstm_c = tf.reshape(init_lstm_c, [-1, self.lstm_unit_size])
+            lstm_h = tf.reshape(init_lstm_h, [-1, self.lstm_unit_size])
+            lstm_initial_state = tf.nn.rnn_cell.LSTMStateTuple(lstm_c, lstm_h)
+            with tf.variable_scope("public_lstm"):
+                lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.lstm_unit_size, forget_bias=1.0)
+                with tf.variable_scope("rnn"):
+                    state = lstm_initial_state
+                    lstm_output, self.lstm_state = lstm_cell(reshape_fc_public_result, state)
+                self.reshape_lstm_output_result = tf.reshape(lstm_output, [-1, self.lstm_unit_size],
+                                                              name="reshape_lstm_outputs_result")
             self.pi_logits = self._create_policy_network()
             self.value = self._create_value_network()
             self.params = tf.trainable_variables()
@@ -30,14 +45,14 @@ class Model(Model_Base):
     def _create_policy_network(self):
         pi_logits_all = []
         for i in range(self.action_dim):
-            pi_logit_tmp = tf.layers.dense(self.h, 1, activation=None, \
+            pi_logit_tmp = tf.layers.dense(self.reshape_lstm_output_result, 1, activation=None, \
                     kernel_initializer=Orthogonal(scale=0.01), name="logits_%d" % i)
             pi_logits_all.append(pi_logit_tmp)
         pi_logits_all_2 = tf.concat(pi_logits_all, axis=1, name="resuls_concat")
         return pi_logits_all_2
 
     def _create_value_network(self):
-        value = tf.layers.dense(self.h, 1, activation=None, \
+        value = tf.layers.dense(self.reshape_lstm_output_result, 1, activation=None, \
                     kernel_initializer=Orthogonal(), name="value")
         return value[:, 0]
 

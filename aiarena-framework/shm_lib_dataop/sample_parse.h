@@ -16,7 +16,7 @@
 namespace sample_parse {
     class SampleParse {
      private:
-         gym_rl::OfflineRlInfo p_data;
+         gym_rl::RlFragmentInfo p_data;
      public:
          bool toSample(char* origin_data, int data_len, char* sample_data, std::string mask, int task_id, std::string task_uuid);
     };

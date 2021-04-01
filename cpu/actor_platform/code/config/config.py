@@ -13,12 +13,12 @@ class Config:
     # kinghonour:4096 atari:256
     BATCH_SIZE = 128
     EPISODE = 20000000
-    GAMMA = 0.99
+    GAMMA = 0.995
     LAMDA = 0.95
     STEPS = 128
     EPOCHES = 4
     MINI_BATCH_NUM = 4
-    ENV_NAME = 'BowlingNoFrameskip-v4'
+    ENV_NAME = 'PongNoFrameskip-v4'
     MIN_POLICY = 0.00005
     T = 1
     TASK_NAME = 'test_auto'
@@ -39,6 +39,8 @@ class Config:
     TASK_UUID = "123"
     IS_TRAIN = True
     IS_CHECK = False
+    LSTM_STEP = 16
+    LSTM_UNIT_SIZE = 128
 
     #atari ppo
     ALGORITHM = "ppo"

@@ -20,4 +20,11 @@ message OfflineRlInfo
     optional bytes next_Q_value = 16;
     optional double gamma_pow = 17;
     optional int32 frame_no = 18;
+    optional bytes lstm_c = 19;
+    optional bytes lstm_h = 20;
+}
+
+message RlFragmentInfo
+{
+    repeated OfflineRlInfo samples = 1;
 }

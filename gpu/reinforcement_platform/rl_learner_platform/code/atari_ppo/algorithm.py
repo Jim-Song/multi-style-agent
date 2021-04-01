@@ -14,6 +14,8 @@ class Algorithm(AlgorithmBase):
         self.alpha = Config.ALPHA
         self.beta = Config.BETA
         self.data_split_shape = Config.DATA_SPLIT_SHAPE
+        self.lstm_step = Config.LSTM_STEP
+        self.lstm_unit_size = Config.LSTM_UNIT_SIZE
 
     def build_graph(self, datas, update):
         self.update = tf.cast(update, tf.float32)
@@ -21,19 +23,22 @@ class Algorithm(AlgorithmBase):
                 tf.float32), 5e-5)
         self.clip_range = tf.maximum(self.init_clip_param * tf.cast((1 - self.update/self.episode), tf.float32), 5e-5)
         self._split_data(datas)
-        self.model.inference(self.feature)
+        self.model.inference(self.feature, self.lstm_c, self.lstm_h)
         self._calculate_loss()
         return self.loss, [self.policy_loss, self.value_loss, self.entropy_loss, tf.reduce_mean\
-                (self.sampled_reward_sum), self.learning_rate]
+                (self.sampled_reward_sum), self.learning_rate, datas]
 
     def _split_data(self, datas):
-        self.feature, self.sampled_advantage, self.sampled_action, self.sampled_neg_log_pi, self.sampled_value = \
-                tf.split(datas, self.data_split_shape, axis=1)
+        self.feature, self.sampled_advantage, self.sampled_action, self.sampled_neg_log_pi, self.sampled_value, self.lstm_c_all, self.lstm_h_all = tf.split(datas, self.data_split_shape, axis=1)
         self.feature = tf.reshape(self.feature, [-1, 28224])
         self.sampled_normalized_advantage = tf.reshape(self.sampled_advantage, [-1])
         self.sampled_action = tf.reshape(self.sampled_action, [-1])
         self.sampled_neg_log_pi = tf.reshape(self.sampled_neg_log_pi, [-1])
         self.sampled_value = tf.reshape(self.sampled_value, [-1])
+        self.lstm_c_all = tf.reshape(self.lstm_c_all, [-1, self.lstm_step, self.lstm_unit_size])
+        self.lstm_h_all = tf.reshape(self.lstm_h_all, [-1, self.lstm_step, self.lstm_unit_size])
+        self.lstm_c = self.lstm_c_all[:, 0, :]
+        self.lstm_h = self.lstm_h_all[:, 0, :]
         self.sampled_reward_sum = self.sampled_value + self.sampled_normalized_advantage
         self.action_rank = self.sampled_action.shape.ndims 
         self.feature.shape.assert_has_rank(self.action_rank + 1)

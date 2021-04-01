@@ -1,1 +1,1 @@
-/protoc -I=. --python_out=. ./*.proto
+/usr/bin/protoc -I=./ --python_out=. ./*.proto
