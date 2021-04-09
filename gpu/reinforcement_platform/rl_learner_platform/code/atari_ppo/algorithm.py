@@ -16,6 +16,7 @@ class Algorithm(AlgorithmBase):
         self.data_split_shape = Config.DATA_SPLIT_SHAPE
         self.lstm_step = Config.LSTM_STEP
         self.lstm_unit_size = Config.LSTM_UNIT_SIZE
+        self.style_loss_weight = Config.STYLE_LOSS_WEIGHT
 
     def build_graph(self, datas, update):
         self.update = tf.cast(update, tf.float32)
@@ -23,13 +24,15 @@ class Algorithm(AlgorithmBase):
                 tf.float32), 5e-5)
         self.clip_range = tf.maximum(self.init_clip_param * tf.cast((1 - self.update/self.episode), tf.float32), 5e-5)
         self._split_data(datas)
-        self.model.inference(self.feature, self.lstm_c, self.lstm_h)
+        self.model.inference(self.feature, self.lstm_c, self.lstm_h, self.style)
         self._calculate_loss()
-        return self.loss, [self.policy_loss, self.value_loss, self.entropy_loss, tf.reduce_mean\
-                (self.sampled_reward_sum), self.learning_rate, datas]
+        return self.loss, [self.policy_loss, self.value_loss, self.entropy_loss,
+                           tf.reduce_mean(self.sampled_reward_sum), self.learning_rate,
+                           self.style_loss, tf.reduce_mean(self.long_style_loss),
+                           tf.reduce_mean(self.short_style_loss), datas]
 
     def _split_data(self, datas):
-        self.feature, self.sampled_advantage, self.sampled_action, self.sampled_neg_log_pi, self.sampled_value, self.lstm_c_all, self.lstm_h_all = tf.split(datas, self.data_split_shape, axis=1)
+        self.feature, self.sampled_advantage, self.sampled_action, self.sampled_neg_log_pi, self.sampled_value, self.lstm_c_all, self.lstm_h_all, self.style = tf.split(datas, self.data_split_shape, axis=1)
         self.feature = tf.reshape(self.feature, [-1, 28224])
         self.sampled_normalized_advantage = tf.reshape(self.sampled_advantage, [-1])
         self.sampled_action = tf.reshape(self.sampled_action, [-1])
@@ -39,6 +42,7 @@ class Algorithm(AlgorithmBase):
         self.lstm_h_all = tf.reshape(self.lstm_h_all, [-1, self.lstm_step, self.lstm_unit_size])
         self.lstm_c = self.lstm_c_all[:, 0, :]
         self.lstm_h = self.lstm_h_all[:, 0, :]
+        self.style = tf.cast(tf.reshape(self.style, [-1]), tf.int32)
         self.sampled_reward_sum = self.sampled_value + self.sampled_normalized_advantage
         self.action_rank = self.sampled_action.shape.ndims 
         self.feature.shape.assert_has_rank(self.action_rank + 1)
@@ -52,7 +56,11 @@ class Algorithm(AlgorithmBase):
         self._calc_policy_loss()
         self._calc_value_loss()
         self._calc_entropy_loss()
-        self.loss = -(self.policy_loss - self.alpha * self.value_loss + self.beta * self.entropy_loss)
+        self.style_loss = self.model.style_loss
+        self.long_style_loss = self.model.long_style_loss
+        self.short_style_loss = self.model.short_style_loss
+        self.loss = -(self.policy_loss - self.alpha * self.value_loss + self.beta * self.entropy_loss) + \
+                    self.style_loss * self.style_loss_weight
 
     def _calc_policy_loss(self):
         neg_log_pi = self.model.neg_log_prob(self.sampled_action, "neg_log_pi")

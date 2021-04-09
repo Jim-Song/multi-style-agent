@@ -1,3 +1,4 @@
+import math
 import tensorflow as tf
 import numpy as np
 from atari_ppo.config import Config
@@ -14,16 +15,34 @@ class Model(ModelBase):
         self.lstm_unit_size = Config.LSTM_UNIT_SIZE
         self.lstm_time_steps = Config.LSTM_STEP
 
-    def inference(self, feature, init_lstm_c, init_lstm_h):
+        self.long_term_style_interval = Config.LONG_TERM_STYLE_INTERVAL
+        self.short_term_style_interval = Config.SHORT_TERM_STYLE_INTERVAL
+        self.causal_cnn_receptive_field = Config.CAUSAL_CNN_RECEPTIVE_FIELD
+        self.hidden_channel = Config.HIDDEN_CHANNEL
+        self.num_hidden_styles = Config.NUM_HIDDEN_STYLES
+        self.long_term_causal_conv1d_layers = int(math.log2(self.long_term_style_interval) + 1 -
+                                                  math.log2(self.causal_cnn_receptive_field))
+        self.short_term_causal_conv1d_layers = int(math.log2(self.short_term_style_interval) + 1 -
+                                                   math.log2(self.causal_cnn_receptive_field))
+
+        assert self.long_term_causal_conv1d_layers == math.log2(self.long_term_style_interval) + 1 - math.log2(
+            self.causal_cnn_receptive_field)
+        assert self.short_term_causal_conv1d_layers == math.log2(self.short_term_style_interval) + 1 - math.log2(
+            self.causal_cnn_receptive_field)
+
+    def inference(self, feature, init_lstm_c, init_lstm_h, style):
         '''
         feature: [B, T, C, H, W]
         '''
         self.feature = tf.identity(feature, name="feature")
         self.feature_float = tf.to_float(feature, name="feature_float")
         self.feature_float = tf.reshape(self.feature_float, self.feature_shape)
+        self.style_input = tf.one_hot(style, self.num_hidden_styles)
 
         with tf.variable_scope("model"):
             self.h = self._cnn()
+            self.h = tf.concat([self.h, self.style_input], axis=-1, name='style_concat')
+            self.h = tf.layers.dense(self.h, 128, activation=None, kernel_initializer=Orthogonal(), name="style_fc")
             reshape_fc_public_result = tf.reshape(self.h, [-1, self.lstm_time_steps, 128],
                                                   name="reshape_fc_public_result")
             lstm_c = tf.reshape(init_lstm_c, [-1, self.lstm_unit_size])
@@ -43,6 +62,44 @@ class Model(ModelBase):
 
             self.pi_logits = self._create_policy_network()
             self.value = self._create_value_network()
+
+        with tf.variable_scope("style_discriminator"):
+            self.h = self._cnn()
+
+            reshape_fc_public_result = tf.reshape(self.h, [-1, self.lstm_time_steps, 128],
+                                                  name="reshape_fc_public_result")
+            long_term_style = reshape_fc_public_result
+            for i in range(self.long_term_causal_conv1d_layers):
+                dilation_rate = int(2 ** i * self.causal_cnn_receptive_field / 2)
+                long_term_style = tf.compat.v1.layers.conv1d(long_term_style, self.hidden_channel, 2, strides=1,
+                                                             dilation_rate=dilation_rate, padding='causal',
+                                                             name='long_causal_conv1d{}'.format(i))
+            short_term_style = reshape_fc_public_result
+            for i in range(self.short_term_causal_conv1d_layers):
+                dilation_rate = int(2 ** i * self.causal_cnn_receptive_field / 2)
+                short_term_style = tf.compat.v1.layers.conv1d(short_term_style, self.hidden_channel, 2, strides=1,
+                                                              dilation_rate=dilation_rate, padding='causal',
+                                                              name='short_causal_conv1d{}'.format(i))
+            long_term_style = tf.layers.dense(long_term_style, 128, activation=None,
+                                              kernel_initializer=Orthogonal(), name="style_long_dense_1")
+            long_term_style = tf.layers.dense(long_term_style, 128, activation=None,
+                                              kernel_initializer=Orthogonal(), name="style_long_dense_2")
+            pred_long_term_style = tf.layers.dense(long_term_style, self.num_hidden_styles, activation=None,
+                                                   kernel_initializer=Orthogonal(), name="style_long_dense_3")
+
+            short_term_style = tf.layers.dense(short_term_style, 128, activation=None,
+                                               kernel_initializer=Orthogonal(), name="style_short_dense_1")
+            short_term_style = tf.layers.dense(short_term_style, 128, activation=None,
+                                               kernel_initializer=Orthogonal(), name="style_short_dense_2")
+            pred_short_term_style = tf.layers.dense(short_term_style, self.num_hidden_styles, activation=None,
+                                                    kernel_initializer=Orthogonal(), name="style_short_dense_3")
+            # pred_long_term_style = long_term_style[:, self.long_term_style_interval:]
+            # pred_short_term_style = short_term_style[:, self.short_term_style_interval:]
+            self.long_style_loss = tf.nn.softmax_cross_entropy_with_logits(labels=self.style_input,
+                                                                           logits=pred_long_term_style)
+            self.short_style_loss = tf.nn.softmax_cross_entropy_with_logits(labels=self.style_input,
+                                                                            logits=pred_short_term_style)
+            self.style_loss = tf.reduce_mean(self.long_style_loss) + tf.reduce_mean(self.short_style_loss)
 
     def neg_log_prob(self, action, name):
         action = tf.cast(action, tf.int32)

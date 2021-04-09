@@ -39,6 +39,7 @@ class Actor():
         self.m_lib_samplemanager = Config.LIB_SAMEPLEMANAGER
         self.m_algorithm = Config.ALGORITHM
         self.use_zmq = Config.use_zmq
+        self.num_hidden_styles = Config.NUM_HIDDEN_STYLES
 
         self.m_replay_buffer = deque()
         self.m_episode_info = deque(maxlen=100)
@@ -55,7 +56,7 @@ class Actor():
             self.m_init_path,
             self.m_update_path)
         self.m_run_step = 0
-        self.m_best_reward = 0
+        self.m_best_reward = -1e100
         self.m_ip = CommonFunc.get_local_ip()
         CommonLogger.set_config(self.m_config_id)
         self.m_influxdb = InfluxTool(self.m_config_id)
@@ -65,60 +66,64 @@ class Actor():
 
     def send_data(self, cond=None):
         while True:
-            # try:
-            cond.acquire()
-            if len(self.m_replay_buffer) == 0:
-                cond.wait()
-            LOG.info("send_data: {:.2f}".format(len(self.m_replay_buffer)))
-            self.m_sender.send_data(self.m_replay_buffer.popleft())
-            cond.release()
-            # except Exception as e:
-                # LOG.error(e)
+            try:
+                cond.acquire()
+                if len(self.m_replay_buffer) == 0:
+                    cond.wait()
+                LOG.info("send_data: {:.2f}".format(len(self.m_replay_buffer)))
+                self.m_sender.send_data(self.m_replay_buffer.popleft())
+                cond.release()
+            except Exception as e:
+                LOG.error(e)
 
     def get_data(self, cond=None):
         while True:
-            # try:
-            game_id = CommonFunc.get_game_id()
-            if cond:
-                cond.acquire()
-            samples = self._run_episode(game_id)
-            #if self.m_action_type == "async":
-            send_samples = CommonFunc.generate_data(*samples)
-            self.m_replay_buffer.extend(send_samples)
-            if cond:
-                cond.notifyAll()
-                cond.release()
-            # except Exception as e:
-            #     LOG.error(e)
+            try:
+                game_id = CommonFunc.get_game_id()
+                if cond:
+                    cond.acquire()
+                samples = self._run_episode(game_id)
+                #if self.m_action_type == "async":
+                send_samples = CommonFunc.generate_data(*samples)
+                self.m_replay_buffer.extend(send_samples)
+                if cond:
+                    cond.notifyAll()
+                    cond.release()
+            except Exception as e:
+                LOG.error(e)
 
     def _run_episode(self, game_id):
         #if self.m_action_type == "async":
         aiprocess = self.m_aiprocess_lib.AIProcess(True)
         sample_manager = importlib.import_module(self.m_lib_samplemanager).SampleManager(game_id)
         state = self.m_gamecore.get_state()
+
+        hidden_style = np.random.randint(self.num_hidden_styles)
+        style_input = [np.eye(self.num_hidden_styles)[hidden_style]]
+        state_dict = {'state': state, 'pred_style': False, 'style_input': style_input}
         frame_no = 0
+        samples = []
         while frame_no < self.m_steps:
             frame_no += 1
-            action, value, neg_log_pis, lstm_state = aiprocess.process(state)
+            action, value, neg_log_pis, lstm_state = aiprocess.process(state_dict)
             next_state, reward, done, info, _ = self.m_gamecore.process(action)
             if info:
                 if info["reward"] > self.m_best_reward:
                     self.m_best_reward = info["reward"]
                 self.m_episode_info.append(info)
                 self.m_print_info = True
-            sample_manager.save_sample(frame_no,
-                                       state,
-                                       next_state,
-                                       action,
-                                       reward,
-                                       done,
-                                       info,
-                                       value,
-                                       neg_log_pis,
-                                       lstm_state,
-                                       )
+            sample = [frame_no, state, next_state, action, reward, done, info,
+                      value, neg_log_pis, lstm_state, hidden_style, ]
+            samples.append(sample)
             state = next_state
-        value = aiprocess.get_value(state)
+            state_dict['state'] = next_state
+
+        style_input = np.tile(style_input, (len(samples), 1))
+        state_dict_s = {'state': [x[1] for x in samples], 'pred_style': True, 'style_input': style_input}
+        long_style_loss, short_style_loss = aiprocess.process(state_dict_s)
+        
+        sample_manager.save_samples(samples, long_style_loss, short_style_loss)
+        value = aiprocess.get_value(state_dict)
         sample_manager.save_value(value[0])
         self._get_mean_episode_info()
         self.m_run_step += 1

@@ -22,6 +22,7 @@ message OfflineRlInfo
     optional int32 frame_no = 18;
     optional bytes lstm_c = 19;
     optional bytes lstm_h = 20;
+    optional int32 style = 21;
 }
 
 message RlFragmentInfo

@@ -15,7 +15,7 @@ class Config:
     EPISODE = 20000000
     GAMMA = 0.995
     LAMDA = 0.95
-    STEPS = 128
+    STEPS = 300
     EPOCHES = 4
     MINI_BATCH_NUM = 4
     ENV_NAME = 'PongNoFrameskip-v4'
@@ -39,7 +39,7 @@ class Config:
     TASK_UUID = "123"
     IS_TRAIN = True
     IS_CHECK = False
-    LSTM_STEP = 16
+    LSTM_STEP = 32
     LSTM_UNIT_SIZE = 128
 
     #atari ppo
@@ -52,6 +52,16 @@ class Config:
     LIB_ENVIRONMENT = "games.atari.environment"
     LIB_PREDICTOR = "algorithms.ppo.predictor"
     LIB_SAMEPLEMANAGER = "algorithms.ppo.sample_manager"
+    
+    #style params
+    LONG_TERM_STYLE_INTERVAL = 16
+    SHORT_TERM_STYLE_INTERVAL = 1
+    CAUSAL_CNN_RECEPTIVE_FIELD = 2
+    LONG_TERM_STYLE_WEIGHT = 0.1
+    SHORT_TERM_STYLE_WEIGHT = 0.00
+    NUM_HIDDEN_STYLES = 5
+
+    HIDDEN_CHANNEL = 64
 
     #atari ac
     #ALGORITHM = "ac"

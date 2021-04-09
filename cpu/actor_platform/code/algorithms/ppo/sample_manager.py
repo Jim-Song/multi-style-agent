@@ -30,6 +30,7 @@ class SampleManager(SampleManager_Base):
                     value,
                     neg_log_pis,
                     lstm_state,
+                    style,
                     ):
         rl_data_info = RLDataInfo()
         lstm_c, lstm_h = lstm_state
@@ -51,6 +52,7 @@ class SampleManager(SampleManager_Base):
                 if neg_log_pis is None:
                     neg_log_pis = 0
                 rl_data_info.neg_log_pis = neg_log_pis
+                rl_data_info.style = style
                 self.rl_data_map[frame_no] = rl_data_info
             else:
                 rl_data_info.frame_no = 1
@@ -66,6 +68,26 @@ class SampleManager(SampleManager_Base):
                     neg_log_pis = 0
                 rl_data_info.neg_log_pis = 10.0
                 self.rl_data_map[frame_no] = rl_data_info
+
+    def save_samples(self, samples, long_style_loss, short_style_loss):
+        assert len(samples) == len(long_style_loss) + Config.LONG_TERM_STYLE_INTERVAL
+        for i in range(len(long_style_loss)):
+            sample = samples[i]
+            frame_no, state, next_state, action, reward, done, info, value, neg_log_pis, \
+                lstm_state, style = sample
+            reward += -1 * long_style_loss[i] * Config.LONG_TERM_STYLE_WEIGHT + short_style_loss[i] * Config.SHORT_TERM_STYLE_WEIGHT
+            self.save_sample(frame_no,
+                             state,
+                             next_state,
+                             action,
+                             reward,
+                             done,
+                             info,
+                             value,
+                             neg_log_pis,
+                             lstm_state,
+                             style,
+                             )
 
     def save_value(self, last_value):
         last_advantage = 0
@@ -117,5 +139,4 @@ class SampleManager(SampleManager_Base):
                 else:
                     LOG.error("actor_type error")
                 rl_fragment_info = RlFragmentInfo()
-            i += 1
         return sample

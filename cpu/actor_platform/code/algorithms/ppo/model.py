@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import math
 import tensorflow as tf
 import numpy as np
 from framework.algorithm.model import Model as Model_Base
@@ -9,12 +10,30 @@ class Model(Model_Base):
     def __init__(self, with_random=True):
         super().__init__(with_random)
         self.lstm_unit_size = Config.LSTM_UNIT_SIZE
+        self.state_dim = Config.INPUT_DIM
 
-    def inference(self, feature, lstm_state):
+        self.long_term_style_interval = Config.LONG_TERM_STYLE_INTERVAL
+        self.short_term_style_interval = Config.SHORT_TERM_STYLE_INTERVAL
+        self.causal_cnn_receptive_field = Config.CAUSAL_CNN_RECEPTIVE_FIELD
+        self.hidden_channel = Config.HIDDEN_CHANNEL
+        self.long_term_causal_conv1d_layers = int(math.log2(self.long_term_style_interval) + 1 -
+                                                  math.log2(self.causal_cnn_receptive_field))
+        self.short_term_causal_conv1d_layers = int(math.log2(self.short_term_style_interval) + 1 -
+                                                   math.log2(self.causal_cnn_receptive_field))
+
+        assert self.long_term_causal_conv1d_layers == math.log2(self.long_term_style_interval) + 1 - math.log2(
+            self.causal_cnn_receptive_field)
+        assert self.short_term_causal_conv1d_layers == math.log2(self.short_term_style_interval) + 1 - math.log2(
+            self.causal_cnn_receptive_field)
+
+    def inference(self, feature, lstm_state, style_input):
         init_lstm_c, init_lstm_h = lstm_state
-        self.feature_float = tf.to_float(feature, name="obs_float")
         with tf.variable_scope("model"):
+            self.feature_float = tf.to_float(feature, name="obs_float")
+            self.style_input = style_input
             self.h = self._cnn()
+            self.h = tf.concat([self.h, self.style_input], axis=-1, name='style_concat')
+            self.h = tf.layers.dense(self.h, 128, activation=None, name="style_fc")
             reshape_fc_public_result = tf.reshape(self.h, [-1, 128],
                                                   name="reshape_fc_public_result")
             lstm_c = tf.reshape(init_lstm_c, [-1, self.lstm_unit_size])
@@ -32,6 +51,54 @@ class Model(Model_Base):
             self.params = tf.trainable_variables()
         self.action = self._sample(self.pi_logits)
         self.neg_log_pi = self.neg_log_prob(self.action, "neg_log_pi_old", self.pi_logits)
+
+    def style_discriminator(self, feature, style_input):
+        with tf.variable_scope("style_discriminator"):
+            self.feature_float = tf.to_float(feature, name="obs_float")
+            # self.feature_float = tf.reshape(self.feature_float, [-1, self.state_dim[0], self.state_dim[1], self.state_dim[2]])
+            self.h = self._cnn()
+
+            long_term_style = self.h
+            long_term_style = tf.expand_dims(long_term_style, 0)
+            for i in range(self.long_term_causal_conv1d_layers):
+                dilation_rate = int(2 ** i * self.causal_cnn_receptive_field / 2)
+                long_term_style = tf.compat.v1.layers.conv1d(long_term_style, self.hidden_channel, 2, strides=1,
+                                                             dilation_rate=dilation_rate, padding='causal',
+                                                             name='long_causal_conv1d{}'.format(i))
+            long_term_style = tf.squeeze(long_term_style, 0)
+
+            short_term_style = self.h
+            short_term_style = tf.expand_dims(short_term_style, 0)
+            for i in range(self.short_term_causal_conv1d_layers):
+                dilation_rate = int(2 ** i * self.causal_cnn_receptive_field / 2)
+                short_term_style = tf.compat.v1.layers.conv1d(short_term_style, self.hidden_channel, 2, strides=1,
+                                                              dilation_rate=dilation_rate, padding='causal',
+                                                              name='short_causal_conv1d{}'.format(i))
+            short_term_style = tf.squeeze(short_term_style, 0)
+
+            long_term_style = tf.layers.dense(long_term_style, 128, activation=None,
+                                              kernel_initializer=Orthogonal(), name="style_long_dense_1")
+            long_term_style = tf.layers.dense(long_term_style, 128, activation=None,
+                                              kernel_initializer=Orthogonal(), name="style_long_dense_2")
+            self.pred_long_term_style = tf.layers.dense(long_term_style, Config.NUM_HIDDEN_STYLES, activation=None,
+                                                   kernel_initializer=Orthogonal(), name="style_long_dense_3")
+
+            short_term_style = tf.layers.dense(short_term_style, 128, activation=None,
+                                               kernel_initializer=Orthogonal(), name="style_short_dense_1")
+            short_term_style = tf.layers.dense(short_term_style, 128, activation=None,
+                                               kernel_initializer=Orthogonal(), name="style_short_dense_2")
+            self.pred_short_term_style = tf.layers.dense(short_term_style, Config.NUM_HIDDEN_STYLES, activation=None,
+                                                    kernel_initializer=Orthogonal(), name="style_short_dense_3")
+
+            self.long_style_loss_orig = tf.nn.softmax_cross_entropy_with_logits(labels=style_input,
+                                                                                logits=self.pred_long_term_style)
+            self.short_style_loss_orig = tf.nn.softmax_cross_entropy_with_logits(labels=style_input,
+                                                                                 logits=self.pred_short_term_style)
+            self.long_style_loss = self.long_style_loss_orig[self.long_term_style_interval:]
+            self.short_style_loss = self.short_style_loss_orig[self.short_term_style_interval:]
+
+            return self.long_style_loss, self.short_style_loss, self.pred_long_term_style, self.pred_short_term_style
+
 
     def neg_log_prob(self, action, name, pi_logits):
         one_hot_actions = tf.one_hot(action, self.action_dim)

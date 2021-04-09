@@ -27,5 +27,5 @@ cd code;
 let actor_num=$actor_num-1
 for i in $(seq 0 $actor_num); do
     nohup python actor.py $actor_type $i >> ../log/actor${i}.log 2>&1 &
-    sleep 60
+    sleep 3
 done;

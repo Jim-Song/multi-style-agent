@@ -18,7 +18,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
 class Actor():
-    def __init__(self,):
+    def __init__(self, num_hidden_styles, hidden_style):
         self.m_init_path = Config.INIT_PATH
         self.m_update_path = Config.UPDATE_PATH
         self.m_mem_pool_path = Config.MEM_POOL_PATH
@@ -32,6 +32,8 @@ class Actor():
         self.m_lib_samplemanager = Config.LIB_SAMEPLEMANAGER
         self.m_algorithm = Config.ALGORITHM
         self.use_zmq = Config.use_zmq
+        self.num_hidden_styles = num_hidden_styles
+        self.hidden_style = hidden_style
 
         self.m_replay_buffer = deque()
         self.m_episode_info = deque(maxlen=100)
@@ -52,29 +54,35 @@ class Actor():
 
 
     def _run_episode(self):
-        #if self.m_action_type == "async":
+        # if self.m_action_type == "async":
         aiprocess = self.m_aiprocess_lib.AIProcess(True)
         state = self.m_gamecore.get_state()
+
+        style_input = [np.eye(self.num_hidden_styles)[self.hidden_style]]
+        state_dict = {'state': state, 'pred_style': False, 'style_input': style_input}
         frame_no = 0
+        samples = []
         while frame_no < self.m_steps:
             frame_no += 1
-            action, value, neg_log_pis, _, action_probs = aiprocess.process(state)
+            action, value, neg_log_pis, lstm_state = aiprocess.process(state_dict)
             next_state, reward, done, info, _ = self.m_gamecore.process(action)
-            if reward != 0:
-                print(reward)
             if info:
                 if info["reward"] > self.m_best_reward:
                     self.m_best_reward = info["reward"]
                 self.m_episode_info.append(info)
                 self.m_print_info = True
-                print(info)
-
+            sample = [frame_no, state, next_state, action, reward, done, info,
+                      value, neg_log_pis, lstm_state, hidden_style, ]
+            samples.append(sample)
             state = next_state
+            state_dict['state'] = next_state
             import time
-            time.sleep(0.011)
-        value = aiprocess.get_value(state)
-        # self._get_mean_episode_info()
-        self.m_run_step += 1
+            time.sleep(0.03)
+
+        style_input = np.tile(style_input, (len(samples), 1))
+        state_dict_s = {'state': [x[1] for x in samples], 'pred_style': True, 'style_input': style_input}
+        long_style_loss, short_style_loss, style_long_pred, style_short_pred = aiprocess.process(state_dict_s)
+        print('long_style_loss: ', long_style_loss)
         return None
 
     def _get_mean_episode_info(self):
@@ -93,6 +101,8 @@ class Actor():
         info["reward"] = self.m_episode_info[-1]["reward"]
 
 if __name__ == "__main__":
-    actor = Actor()
+    num_hidden_styles = int(sys.argv[1])
+    hidden_style = int(sys.argv[2])
+    actor = Actor(num_hidden_styles, hidden_style)
     while True:
         actor._run_episode()

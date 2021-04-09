@@ -13,7 +13,7 @@ class Config:
     # kinghonour:4096 atari:256
     BATCH_SIZE = 128
     EPISODE = 20000000
-    GAMMA = 0.99
+    GAMMA = 0.995
     LAMDA = 0.95
     STEPS = 128
     EPOCHES = 4
@@ -52,6 +52,15 @@ class Config:
     LIB_ENVIRONMENT = "games.atari.environment"
     LIB_PREDICTOR = "algorithms.ppo.predictor"
     LIB_SAMEPLEMANAGER = "algorithms.ppo.sample_manager"
+
+    # style params
+    LONG_TERM_STYLE_INTERVAL = 16
+    SHORT_TERM_STYLE_INTERVAL = 1
+    CAUSAL_CNN_RECEPTIVE_FIELD = 2
+    LONG_TERM_STYLE_WEIGHT = 0.1
+    SHORT_TERM_STYLE_WEIGHT = 0.01
+    NUM_HIDDEN_STYLES = 2
+    HIDDEN_CHANNEL = 64
 
     # atari ac
     # ALGORITHM = "ac"

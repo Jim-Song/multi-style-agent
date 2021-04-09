@@ -81,6 +81,13 @@ bool SampleParse::toSample(char* origin_data, int data_len, char* sample_data, s
        std::memcpy(sample_data + offset, p_data.mutable_samples(i)->mutable_lstm_h()->data(), p_data.mutable_samples(i)->mutable_lstm_h()->size());
        offset += p_data.mutable_samples(i)->mutable_lstm_h()->size();
     }
+    //add hidden_style
+   for (int i = 0; i < p_data.samples_size(); ++i)
+    {
+        float style = p_data.mutable_samples(i)->style();
+        std::memcpy(sample_data + offset, (char*)&style, sizeof(style));
+        offset += sizeof(float);
+    }
 
    return true;
 }
